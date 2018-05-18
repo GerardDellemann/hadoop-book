@@ -3,8 +3,12 @@ import java.io.IOException;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.TableName;
+import org.apache.hadoop.hbase.client.Connection;
+import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
@@ -21,58 +25,58 @@ import org.apache.hadoop.util.ToolRunner;
  * {@link HBaseTemperatureBulkImporter} in particular.
  */
 public class HBaseTemperatureDirectImporter extends Configured implements Tool {
-  
-  static class HBaseTemperatureMapper<K, V> extends Mapper<LongWritable, Text, K, V> {
-    private NcdcRecordParser parser = new NcdcRecordParser();
-    private HTable table;
 
-    @Override
-    protected void setup(Context context) throws IOException {
-      // Create the HBase table client once up-front and keep it around
-      // rather than create on each map invocation.
-      this.table = new HTable(HBaseConfiguration.create(context.getConfiguration()),
-          "observations");
+    static class HBaseTemperatureMapper<K, V> extends Mapper<LongWritable, Text, K, V> {
+        private NcdcRecordParser parser = new NcdcRecordParser();
+        private Connection connection;
+        private Table table;
+
+        @Override
+        protected void setup(Context context) throws IOException {
+            // Create the HBase table client once up-front and keep it around
+            // rather than create on each map invocation.
+            connection = ConnectionFactory.createConnection(HBaseConfiguration.create());
+            table = connection.getTable(TableName.valueOf(HBaseTemperatureQuery.TABLE_NAME));
+        }
+
+        @Override
+        public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+            parser.parse(value.toString());
+            if (parser.isValidTemperature()) {
+                byte[] rowKey = RowKeyConverter.makeObservationRowKey(parser.getStationId(), parser
+                        .getObservationDate()
+                        .getTime());
+                Put put = new Put(rowKey);
+                put.addColumn(Bytes.toBytes(HBaseTemperatureQuery.COLUMNFAMILY_DATA), Bytes.toBytes(
+                        HBaseTemperatureQuery.QUALIFIER_AIRTEMP), Bytes.toBytes(parser.getAirTemperature()));
+                table.put(put);
+            }
+        }
+
+        @Override
+        protected void cleanup(Context context) throws IOException {
+            table.close();
+            connection.close();
+        }
     }
 
     @Override
-    public void map(LongWritable key, Text value, Context context) throws
-        IOException, InterruptedException {
-      parser.parse(value.toString());
-      if (parser.isValidTemperature()) {
-        byte[] rowKey = RowKeyConverter.makeObservationRowKey(parser.getStationId(),
-            parser.getObservationDate().getTime());
-        Put p = new Put(rowKey);
-        p.add(HBaseTemperatureQuery.DATA_COLUMNFAMILY,
-            HBaseTemperatureQuery.AIRTEMP_QUALIFIER,
-            Bytes.toBytes(parser.getAirTemperature()));
-        table.put(p);
-      }
+    public int run(String[] args) throws Exception {
+        if (args.length != 1) {
+            System.err.println("Usage: HBaseTemperatureDirectImporter <input>");
+            return -1;
+        }
+        Job job = Job.getInstance(HBaseConfiguration.create(), getClass().getSimpleName());
+        job.setJarByClass(getClass());
+        FileInputFormat.addInputPath(job, new Path(args[0]));
+        job.setMapperClass(HBaseTemperatureMapper.class);
+        job.setNumReduceTasks(0);
+        job.setOutputFormatClass(NullOutputFormat.class);
+        return job.waitForCompletion(true) ? 0 : 1;
     }
 
-    @Override
-    protected void cleanup(Context context) throws IOException {
-      table.close();
+    public static void main(String[] args) throws Exception {
+        int exitCode = ToolRunner.run(new HBaseTemperatureDirectImporter(), args);
+        System.exit(exitCode);
     }
-  }
-
-  @Override
-  public int run(String[] args) throws Exception {
-    if (args.length != 1) {
-      System.err.println("Usage: HBaseTemperatureDirectImporter <input>");
-      return -1;
-    }
-    Job job = new Job(getConf(), getClass().getSimpleName());
-    job.setJarByClass(getClass());
-    FileInputFormat.addInputPath(job, new Path(args[0]));
-    job.setMapperClass(HBaseTemperatureMapper.class);
-    job.setNumReduceTasks(0);
-    job.setOutputFormatClass(NullOutputFormat.class);
-    return job.waitForCompletion(true) ? 0 : 1;
-  }
-
-  public static void main(String[] args) throws Exception {
-    int exitCode = ToolRunner.run(HBaseConfiguration.create(),
-        new HBaseTemperatureDirectImporter(), args);
-    System.exit(exitCode);
-  }
 }

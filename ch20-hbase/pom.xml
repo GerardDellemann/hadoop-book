@@ -3,9 +3,9 @@
   <modelVersion>4.0.0</modelVersion>
   <parent>
     <groupId>com.hadoopbook</groupId>
-    <artifactId>hadoop-meta</artifactId>
+    <artifactId>book</artifactId>
     <version>4.0</version>
-    <relativePath>../hadoop-meta/pom.xml</relativePath>
+    <relativePath>../pom.xml</relativePath>
   </parent>
   <groupId>com.hadoopbook</groupId>
   <artifactId>ch20-hbase</artifactId>
@@ -25,6 +25,10 @@
     <dependency>
       <groupId>org.apache.hbase</groupId>
       <artifactId>hbase-server</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>hbase-mapreduce</artifactId>
     </dependency>
   </dependencies>
   <build>

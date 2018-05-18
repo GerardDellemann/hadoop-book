@@ -18,46 +18,45 @@ import org.apache.hadoop.util.ToolRunner;
  * and {@code Table}.
  */
 public class NewHBaseStationImporter extends Configured implements Tool {
-  
-  public int run(String[] args) throws IOException {
-    if (args.length != 1) {
-      System.err.println("Usage: HBaseStationImporter <input>");
-      return -1;
-    }
+    private static final String VALUE_UNKNOWN = "(unknown)";
 
-    Configuration config = HBaseConfiguration.create();
-    Connection connection = ConnectionFactory.createConnection(config);
-    try {
-      // Create table
-      TableName tableName = TableName.valueOf("stations");
-      Table table = connection.getTable(tableName);
-      try {
-        NcdcStationMetadata metadata = new NcdcStationMetadata();
-        metadata.initialize(new File(args[0]));
-        Map<String, String> stationIdToNameMap = metadata.getStationIdToNameMap();
-
-        for (Map.Entry<String, String> entry : stationIdToNameMap.entrySet()) {
-          Put put = new Put(Bytes.toBytes(entry.getKey()));
-          put.add(NewHBaseStationQuery.INFO_COLUMNFAMILY,
-              NewHBaseStationQuery.NAME_QUALIFIER, Bytes.toBytes(entry.getValue()));
-          put.add(NewHBaseStationQuery.INFO_COLUMNFAMILY,
-              NewHBaseStationQuery.DESCRIPTION_QUALIFIER, Bytes.toBytes("(unknown)"));
-          put.add(NewHBaseStationQuery.INFO_COLUMNFAMILY,
-              NewHBaseStationQuery.LOCATION_QUALIFIER, Bytes.toBytes("(unknown)"));
-          table.put(put);
+    public int run(String[] args) throws IOException {
+        if (args.length != 1) {
+            System.err.println("Usage: HBaseStationImporter <input>");
+            return -1;
         }
-      } finally {
-        table.close();
-      }
-    } finally {
-      connection.close();
-    }
-    return 0;
-  }
 
-  public static void main(String[] args) throws Exception {
-    int exitCode = ToolRunner.run(HBaseConfiguration.create(),
-        new NewHBaseStationImporter(), args);
-    System.exit(exitCode);
-  }
+        Connection connection = ConnectionFactory.createConnection(HBaseConfiguration.create());
+        try {
+            // Create table
+            Table table = connection.getTable(TableName.valueOf(NewHBaseStationQuery.TABLE_NAME));
+            try {
+                NcdcStationMetadata metadata = new NcdcStationMetadata();
+                metadata.initialize(new File(args[0]));
+                Map<String, String> stationIdToNameMap = metadata.getStationIdToNameMap();
+
+                for (Map.Entry<String, String> entry : stationIdToNameMap.entrySet()) {
+                    Put put = new Put(Bytes.toBytes(entry.getKey()));
+                    put.addColumn(Bytes.toBytes(NewHBaseStationQuery.COLUMNFAMILY_INFO),
+                            Bytes.toBytes(NewHBaseStationQuery.QUALIFIER_NAME), Bytes.toBytes(entry.getValue()));
+                    put.addColumn(Bytes.toBytes(NewHBaseStationQuery.COLUMNFAMILY_INFO),
+                            Bytes.toBytes(NewHBaseStationQuery.QUALIFIER_DESCRIPTION), Bytes.toBytes(VALUE_UNKNOWN));
+                    put.addColumn(Bytes.toBytes(NewHBaseStationQuery.INFO_COLUMNFAMILY),
+                            Bytes.toBytes(NewHBaseStationQuery.QUALIFIER_LOCATION), Bytes.toBytes(VALUE_UNKNOWN));
+                    table.put(put);
+                }
+            } finally {
+                table.close();
+            }
+        } finally {
+            connection.close();
+        }
+        return 0;
+    }
+
+    public static void main(String[] args) throws Exception {
+        int exitCode = ToolRunner.run(HBaseConfiguration.create(),
+                new NewHBaseStationImporter(), args);
+        System.exit(exitCode);
+    }
 }
